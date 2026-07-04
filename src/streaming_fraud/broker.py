@@ -74,7 +74,12 @@ class KafkaBus:
         self._producer.poll(0)
 
     def flush(self) -> None:
-        self._producer.flush(10)
+        # flush() returns the number of messages STILL undelivered. Ignoring it
+        # means a producer can exit 0 having delivered nothing (e.g. broker not
+        # up yet) - a silent-loss bug we hit in the k8s smoke test.
+        remaining = self._producer.flush(30)
+        if remaining:
+            raise RuntimeError(f"{remaining} messages not delivered before flush timeout")
 
     def consume(self, topic: str, *, limit: int | None, idle_timeout: float) -> Iterator[Message]:
         self._consumer.subscribe([topic])

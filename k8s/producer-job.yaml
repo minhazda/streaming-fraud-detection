@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: producer
+spec:
+  # The producer raises if messages go undelivered (broker still booting);
+  # backoff retries provide the startup ordering k8s doesn't.
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: producer
+          image: streaming-fraud:ci
+          imagePullPolicy: Never
+          command:
+            - python
+            - -m
+            - streaming_fraud.producer
+            - --n
+            - "500"
+            - --rate
+            - "0"
+            - --invalid-every
+            - "100"
+          envFrom:
+            - configMapRef:
+                name: pipeline-config
