@@ -1,0 +1,59 @@
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.4
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=INTERNAL://0.0.0.0:9092,EXTERNAL://0.0.0.0:19092
+      - --advertise-kafka-addr=INTERNAL://redpanda:9092,EXTERNAL://localhost:19092
+    ports:
+      - "19092:19092"
+      - "9644:9644"
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health", "--exit-when-healthy"]
+      interval: 5s
+      timeout: 10s
+      retries: 12
+
+  pipeline:
+    build: .
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    environment:
+      SF_BOOTSTRAP_SERVERS: redpanda:9092
+      SF_MODEL_PATH: /models/fraud_model.joblib
+      FD_MODEL_PATH: /models/fraud_model.joblib
+      FD_CONFIG: configs/train.yaml
+    command: sh -c "python -m fraud_detection.train && python -m streaming_fraud.pipeline"
+    volumes:
+      - models:/models
+    ports:
+      - "8001:8001"   # Prometheus metrics
+
+  producer:
+    build: .
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    environment:
+      SF_BOOTSTRAP_SERVERS: redpanda:9092
+    command: python -m streaming_fraud.producer --n 2000 --rate 50 --invalid-every 100
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    depends_on:
+      - pipeline
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+volumes:
+  models:
