@@ -1,0 +1,5 @@
+# Fast in-container training profile for the demo stack (seconds, not minutes).
+seed: 7
+n_samples: 30000
+test_size: 0.4
+model_path: /models/fraud_model.joblib
