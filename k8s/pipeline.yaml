@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pipeline-config
+data:
+  SF_BOOTSTRAP_SERVERS: redpanda:9092
+  SF_MODEL_PATH: /models/fraud_model.joblib
+  FD_MODEL_PATH: /models/fraud_model.joblib
+  FD_CONFIG: configs/train.yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pipeline
+  labels:
+    app: pipeline
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pipeline
+  template:
+    metadata:
+      labels:
+        app: pipeline
+    spec:
+      # The model is trained into a shared emptyDir before the consumer starts:
+      # the pod is self-contained, no registry/bucket needed for the demo.
+      initContainers:
+        - name: train-model
+          image: streaming-fraud:ci
+          imagePullPolicy: Never  # loaded into kind; use a registry in production
+          command: [python, -m, fraud_detection.train]
+          envFrom:
+            - configMapRef:
+                name: pipeline-config
+          volumeMounts:
+            - name: models
+              mountPath: /models
+      containers:
+        - name: pipeline
+          image: streaming-fraud:ci
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: pipeline-config
+          ports:
+            - containerPort: 8001
+              name: metrics
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: models
+              mountPath: /models
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: models
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pipeline-metrics
+  labels:
+    app: pipeline
+spec:
+  selector:
+    app: pipeline
+  ports:
+    - port: 8001
+      targetPort: metrics
+---
+# Scales on CPU when a metrics-server is present (kind ships without one).
+# Note: effective max parallelism = partition count of transactions.raw.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: pipeline
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pipeline
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

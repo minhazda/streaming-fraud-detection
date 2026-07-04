@@ -62,6 +62,25 @@ The integration test publishes 300 transactions (6 malformed), runs the pipeline
 and asserts exact scored/alert/DLQ counts plus payload round-trip integrity.
 Throughput on the CI runner is printed in the [CI logs](https://github.com/minhazda/streaming-fraud-detection/actions).
 
+## Kubernetes
+
+The same stack runs on Kubernetes (`k8s/`): Redpanda + the pipeline Deployment
+(an init container trains the model into a shared volume, so the pod is
+self-contained), a replay-producer Job, a metrics Service, and an HPA
+(CPU-based; effective max parallelism = the topic's partition count).
+
+CI proves it on every push: a **kind** cluster is created, the image is built
+and loaded, everything is deployed, the producer Job replays 500 transactions
+(5 malformed), and the job asserts `scored == 500` / `invalid == 5` straight
+from the pipeline's Prometheus metrics.
+
+```bash
+kind create cluster && docker build -t streaming-fraud:ci . \
+  && kind load docker-image streaming-fraud:ci
+kubectl apply -f k8s/
+kubectl port-forward svc/pipeline-metrics 8001:8001   # then open /metrics
+```
+
 ## Relation to the companion repos
 
 | Repo | Serving mode |
