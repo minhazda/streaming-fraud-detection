@@ -64,16 +64,20 @@ jobs:
           kubectl wait --for=condition=complete job/producer --timeout=180s
       - name: Assert the stream was scored
         run: |
-          sleep 10
           kubectl port-forward svc/pipeline-metrics 8001:8001 &
           sleep 5
-          scored=$(curl -s localhost:8001/metrics \
-            | awk '/^sf_transactions_total{outcome="scored"}/ {print int($2)}')
-          invalid=$(curl -s localhost:8001/metrics \
-            | awk '/^sf_transactions_total{outcome="invalid"}/ {print int($2)}')
-          echo "scored=$scored invalid=$invalid"
-          test "$scored" -eq 500
-          test "$invalid" -eq 5
+          for i in $(seq 1 24); do
+            scored=$(curl -s localhost:8001/metrics \
+              | awk '/^sf_transactions_total{outcome="scored"}/ {print int($2)}')
+            invalid=$(curl -s localhost:8001/metrics \
+              | awk '/^sf_transactions_total{outcome="invalid"}/ {print int($2)}')
+            echo "poll $i: scored=${scored:-0} invalid=${invalid:-0}"
+            if [ "${scored:-0}" -eq 500 ] && [ "${invalid:-0}" -eq 5 ]; then
+              echo "stream fully scored"; exit 0
+            fi
+            sleep 5
+          done
+          echo "timed out waiting for scored=500 invalid=5"; exit 1
       - name: Cluster state on failure
         if: failure()
         run: |

@@ -3,7 +3,9 @@ kind: Job
 metadata:
   name: producer
 spec:
-  backoffLimit: 2
+  # The producer raises if messages go undelivered (broker still booting);
+  # backoff retries provide the startup ordering k8s doesn't.
+  backoffLimit: 6
   template:
     spec:
       restartPolicy: Never
