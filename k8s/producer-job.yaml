@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: producer
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: producer
+          image: streaming-fraud:ci
+          imagePullPolicy: Never
+          command:
+            - python
+            - -m
+            - streaming_fraud.producer
+            - --n
+            - "500"
+            - --rate
+            - "0"
+            - --invalid-every
+            - "100"
+          envFrom:
+            - configMapRef:
+                name: pipeline-config

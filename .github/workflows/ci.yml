@@ -41,3 +41,43 @@ jobs:
       - name: Broker logs on failure
         if: failure()
         run: docker compose logs redpanda
+
+  k8s-smoke:
+    name: Kubernetes smoke test (kind)
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t streaming-fraud:ci .
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: smoke
+      - name: Load image into kind
+        run: kind load docker-image streaming-fraud:ci --name smoke
+      - name: Deploy
+        run: |
+          kubectl apply -f k8s/
+          kubectl rollout status deploy/redpanda --timeout=180s
+          kubectl rollout status deploy/pipeline --timeout=300s
+          kubectl wait --for=condition=complete job/producer --timeout=180s
+      - name: Assert the stream was scored
+        run: |
+          sleep 10
+          kubectl port-forward svc/pipeline-metrics 8001:8001 &
+          sleep 5
+          scored=$(curl -s localhost:8001/metrics \
+            | awk '/^sf_transactions_total{outcome="scored"}/ {print int($2)}')
+          invalid=$(curl -s localhost:8001/metrics \
+            | awk '/^sf_transactions_total{outcome="invalid"}/ {print int($2)}')
+          echo "scored=$scored invalid=$invalid"
+          test "$scored" -eq 500
+          test "$invalid" -eq 5
+      - name: Cluster state on failure
+        if: failure()
+        run: |
+          kubectl get pods -o wide
+          kubectl describe deploy/pipeline
+          kubectl logs deploy/pipeline --all-containers --tail=100 || true
+          kubectl logs deploy/redpanda --tail=50 || true
