@@ -1,0 +1,15 @@
+# Model + feature engineering come from the companion repo (single source of truth,
+# no train/serve skew). Its scientific stack is pinned here because that package
+# intentionally declares no install_requires.
+fraud-detection-mlops @ git+https://github.com/minhazda/fraud-detection-mlops@main
+numpy==1.26.4
+pandas==2.2.2
+scikit-learn==1.5.1
+lightgbm==4.5.0
+joblib==1.4.2
+PyYAML==6.0.2
+
+# Streaming + serving
+confluent-kafka==2.6.1
+pydantic==2.8.2
+prometheus-client==0.20.0

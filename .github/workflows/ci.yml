@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality:
+    name: Lint, type-check & unit test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements-dev.txt && pip install -e .
+      - run: ruff check src tests
+      - run: black --check src tests
+      - run: mypy src
+      - run: pytest -m "not integration" --cov=streaming_fraud --cov-report=term
+
+  integration:
+    name: End-to-end stream test (Redpanda)
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements-dev.txt && pip install -e .
+      - name: Start Redpanda
+        run: docker compose up -d redpanda --wait
+      - name: Run integration suite
+        env:
+          SF_BOOTSTRAP_SERVERS: localhost:19092
+        run: pytest -m integration -s
+      - name: Broker logs on failure
+        if: failure()
+        run: docker compose logs redpanda
