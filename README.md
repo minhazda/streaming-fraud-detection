@@ -46,8 +46,21 @@ pipeline, and replays 2,000 synthetic transactions (1 malformed per 100, to
 exercise the DLQ). Watch:
 
 - metrics: <http://localhost:8001/metrics> (raw) · <http://localhost:9090> (Prometheus)
+- dashboard: <http://localhost:3000> (Grafana, anonymous viewer access)
 - alerts: `docker compose exec redpanda rpk topic consume fraud.alerts`
 - dead letters: `docker compose exec redpanda rpk topic consume transactions.dlq`
+
+## Dashboard
+
+`monitoring/grafana-dashboard.json` is auto-provisioned into Grafana on startup
+(datasource + dashboard files under `monitoring/`, mounted read-only into the
+`grafana` service — no manual import step). Panels:
+
+- **Transaction throughput by outcome** — `rate(sf_transactions_total[1m])` by `outcome`
+- **Alert rate** — `rate(sf_alerts_total[1m])`
+- **Scoring latency (p50 / p99)** — `histogram_quantile` over `sf_scoring_seconds_bucket`
+- **End-to-end latency (p50 / p99)** — `histogram_quantile` over `sf_end_to_end_seconds_bucket`
+- **DLQ rate** — `rate(sf_transactions_total{outcome="invalid"}[1m])`
 
 ## Tests
 
